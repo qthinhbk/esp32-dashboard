@@ -29,7 +29,7 @@ npm run build
 - 📊 **Giám sát real-time**: Nhiệt độ, độ ẩm, khí gas (MQ2), ánh sáng
 - 📈 **Biểu đồ trực quan**: Sparkline charts và circular gauges
 - 🔔 **Cảnh báo thông minh**: Toast notifications khi vượt ngưỡng
-- 💾 **Lưu trữ dữ liệu**: LocalStorage (tối đa 100 bản ghi)
+- 💾 **Lưu trữ dữ liệu**: LocalStorage (tối đa 1000 bản ghi)
 - 📁 **Xuất CSV**: Export dữ liệu sang Excel
 - 🌓 **Dark/Light mode**: Giao diện tối & sáng
 - 🌍 **Đa ngôn ngữ**: Tiếng Việt & English
