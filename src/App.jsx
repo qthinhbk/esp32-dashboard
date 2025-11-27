@@ -17,7 +17,7 @@ import { TRANSLATIONS } from './constants/translations';
 
 // --- CONFIGURATION ---
 const DEFAULT_DEMO_MODE = true;
-const MAX_HISTORY_LENGTH = 100;
+const MAX_HISTORY_LENGTH = 1000;
 const MOCK_WIFI_NETWORKS = [
     { ssid: "Viettel_Home_5G", rssi: -50 },
     { ssid: "Coffee_Free_WiFi", rssi: -65 },
@@ -67,11 +67,8 @@ const App = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(20);
 
-    // Relay States
-    // const [relays, setRelays] = useState({ relay1: false, relay2: false }); // Removed
     const t = TRANSLATIONS[lang];
 
-    // --- PERSISTENCE ---
     // --- PERSISTENCE ---
     useEffect(() => {
         localStorage.setItem('esp32_history_data', JSON.stringify(historyData));
@@ -202,9 +199,6 @@ const App = () => {
         }
     };
 
-    // const sendControl = async (relay, state) => { ... } // Removed
-    // const toggleRelay = (key) => sendControl(key, !relays[key]); // Removed
-
     // --- EFFECTS ---
     useEffect(() => {
         if (!demoMode) fetchRealData(); // Fetch immediately when switching to Real Mode
@@ -279,11 +273,29 @@ const App = () => {
         document.body.appendChild(link); link.click(); document.body.removeChild(link);
     };
 
-    const handleClearData = () => { if (confirm(t.confirmClear)) { setHistoryData([]); localStorage.removeItem('esp32_history_data'); } };
-    const handleScanWifi = async () => { setIsScanning(true); setTimeout(() => { setWifiList(MOCK_WIFI_NETWORKS); setIsScanning(false); }, 1500); };
-    const handleSaveConfig = async () => { alert(t.saved); };
-    const handleLoadConfig = async () => { setIsLoadingConfig(true); setTimeout(() => { setConfigForm(prev => ({ ...prev, deviceId: 'ESP32_LOADED', sendInterval: 5 })); setIsLoadingConfig(false); alert(t.loaded); }, 1000); };
-    const handleRefreshConfig = () => { alert(t.refreshed); };
+    const handleClearData = () => {
+        if (confirm(t.confirmClear)) { setHistoryData([]); localStorage.removeItem('esp32_history_data'); }
+    };
+
+    const handleScanWifi = async () => {
+        setIsScanning(true);
+        setTimeout(() => {
+            setWifiList(MOCK_WIFI_NETWORKS);
+            setIsScanning(false);
+        }, 1500);
+    };
+
+    const handleSaveConfig = async () => {
+        alert(t.saved);
+    };
+
+    const handleLoadConfig = async () => {
+        setIsLoadingConfig(true); setTimeout(() => { setConfigForm(prev => ({ ...prev, deviceId: 'ESP32_LOADED', sendInterval: 5 })); setIsLoadingConfig(false); alert(t.loaded); }, 1000);
+    };
+
+    const handleRefreshConfig = () => {
+        alert(t.refreshed);
+    };
 
     // --- RENDER ---
     return (
@@ -367,7 +379,6 @@ const App = () => {
                             <div className="p-6 border-b border-gray-700/50 flex flex-col gap-4">
                                 <div>
                                     <h3 className="text-xl font-bold flex items-center gap-2"><Database size={20} className="text-blue-500" /> {t.database}</h3>
-                                    <p className="text-xs opacity-60 mt-1">Lưu trữ tối đa {MAX_HISTORY_LENGTH} bản ghi gần nhất (Local Storage)</p>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
                                     <div className="flex items-center gap-2">
