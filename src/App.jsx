@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
     LayoutDashboard, Settings, Activity, Wifi, Sun, Moon,
     Languages, Thermometer, Droplets, Wind,
-    RefreshCw, Save, Menu, X, Router,
+    RefreshCw, Save, Menu, X, Router, Eye, EyeOff,
     Download, Info, RotateCcw, Database, Trash2, FileSpreadsheet
 } from 'lucide-react';
 
@@ -59,9 +59,20 @@ const App = () => {
     // New Feature States
     const [prevSensorData, setPrevSensorData] = useState(sensorData);
     const [toasts, setToasts] = useState([]);
+    const [showWifiPass, setShowWifiPass] = useState(false);
+    const [showToken, setShowToken] = useState(false);
     const [systemLogs, setSystemLogs] = useState(() => {
         const saved = localStorage.getItem('esp32_system_logs');
-        try { return saved ? JSON.parse(saved) : []; } catch (e) { return []; }
+        try {
+            const logs = saved ? JSON.parse(saved) : [];
+            // Regenerate IDs to ensure uniqueness
+            return logs.map((log, index) => ({
+                ...log,
+                id: Date.now() + Math.random() + index
+            }));
+        } catch (e) {
+            return [];
+        }
     });
     const [dateFilter, setDateFilter] = useState({ from: '', to: '' });
     const [currentPage, setCurrentPage] = useState(1);
@@ -89,7 +100,7 @@ const App = () => {
     // --- HELPER FUNCTIONS ---
     const addSystemLog = (type, message) => {
         const log = {
-            id: Date.now(),
+            id: Date.now() + Math.random(), // Ensure unique ID
             timestamp: new Date().toLocaleString(),
             type,
             message
@@ -200,6 +211,34 @@ const App = () => {
     };
 
     // --- EFFECTS ---
+    // Auto-detect ESP32 on startup
+    useEffect(() => {
+        const checkESP32Connection = async () => {
+            try {
+                const response = await fetch('/api/data', {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(3000) // 3s timeout
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.sensors) {
+                        // ESP32 detected, switch to Real mode
+                        setDemoMode(false);
+                        addSystemLog('success', 'Đã phát hiện ESP32, tự động chuyển sang chế độ thực');
+                        showToast('ESP32 đã kết nối!', 'success');
+                    }
+                }
+            } catch (error) {
+                // ESP32 not available, stay in Demo mode
+                console.log('ESP32 not detected, staying in Demo mode');
+                addSystemLog('info', 'Không tìm thấy ESP32, chạy ở chế độ Demo');
+            }
+        };
+
+        checkESP32Connection();
+    }, []); // Run once on mount
+
+    // Polling effect for both Demo and Real modes
     useEffect(() => {
         if (!demoMode) fetchRealData(); // Fetch immediately when switching to Real Mode
 
@@ -279,18 +318,62 @@ const App = () => {
 
     const handleScanWifi = async () => {
         setIsScanning(true);
-        setTimeout(() => {
+        try {
+            const response = await fetch('/api/scan');
+            if (!response.ok) throw new Error('Scan failed');
+            const data = await response.json();
+            setWifiList(data.networks || []);
+        } catch (error) {
+            console.error('WiFi scan error:', error);
+            // Fallback to mock data in demo mode
             setWifiList(MOCK_WIFI_NETWORKS);
+        } finally {
             setIsScanning(false);
-        }, 1500);
+        }
     };
 
     const handleSaveConfig = async () => {
-        alert(t.saved);
+        try {
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configForm)
+            });
+            if (!response.ok) throw new Error('Save failed');
+            const data = await response.json();
+            alert(data.message || t.saved);
+            // ESP32 might reboot, so we wait and check connection
+            setTimeout(() => {
+                addSystemLog('info', 'ESP32 đang khởi động lại với cấu hình mới...');
+            }, 1000);
+        } catch (error) {
+            console.error('Save config error:', error);
+            alert('Lỗi: Không thể lưu cấu hình. Kiểm tra kết nối ESP32.');
+        }
     };
 
     const handleLoadConfig = async () => {
-        setIsLoadingConfig(true); setTimeout(() => { setConfigForm(prev => ({ ...prev, deviceId: 'ESP32_LOADED', sendInterval: 5 })); setIsLoadingConfig(false); alert(t.loaded); }, 1000);
+        setIsLoadingConfig(true);
+        try {
+            const response = await fetch('/api/config');
+            if (!response.ok) throw new Error('Load failed');
+            const data = await response.json();
+            setConfigForm({
+                deviceId: data.deviceId || '',
+                wifiSSID: data.wifiSSID || '',
+                wifiPass: '', // Don't load password for security
+                token: data.token || '',
+                server: data.server || '',
+                port: data.port || '',
+                sendInterval: data.sendInterval || 5
+            });
+            alert(t.loaded);
+        } catch (error) {
+            console.error('Load config error:', error);
+            alert('Lỗi: Không thể tải cấu hình. Kiểm tra kết nối ESP32.');
+        } finally {
+            setIsLoadingConfig(false);
+        }
     };
 
     const handleRefreshConfig = () => {
@@ -299,7 +382,7 @@ const App = () => {
 
     // --- RENDER ---
     return (
-        <div className={`min-h-screen flex transition-colors duration-300 ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
+        <div className={`min-h-screen flex transition-colors duration-300 ${darkMode ? 'bg-gray-950 text-gray-100' : 'bg-gray-100 text-gray-900'}`}>
             {/* Toast Notifications */}
             <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
                 {toasts.map(toast => (
@@ -375,7 +458,7 @@ const App = () => {
                     )}
 
                     {activeTab === 'database' && (
-                        <div className={`rounded-2xl shadow-sm overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                        <div className={`rounded-2xl shadow-md overflow-hidden border ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
                             <div className="p-6 border-b border-gray-700/50 flex flex-col gap-4">
                                 <div>
                                     <h3 className="text-xl font-bold flex items-center gap-2"><Database size={20} className="text-blue-500" /> {t.database}</h3>
@@ -440,21 +523,56 @@ const App = () => {
                                 </ul>
                             </div>
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <div className={`p-8 rounded-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                                <div className={`p-8 rounded-2xl border shadow-md ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
                                     <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-700/50"><Wifi className="text-blue-500" /><h3 className="text-xl font-bold">{t.wifiConfig}</h3></div>
                                     <div className="space-y-4">
-                                        <div><label className="block text-sm font-medium mb-1">{t.deviceId}</label><input type="text" value={configForm.deviceId} onChange={(e) => setConfigForm({ ...configForm, deviceId: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none transition ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} /></div>
-                                        <div><label className="block text-sm font-medium mb-1">{t.wifiSelect}</label><div className="flex gap-2"><select className={`flex-1 p-3 rounded-lg border outline-none ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} value={configForm.wifiSSID} onChange={(e) => setConfigForm({ ...configForm, wifiSSID: e.target.value })}><option value="">-- {t.wifiSelect} --</option>{wifiList.map((net, idx) => (<option key={idx} value={net.ssid}>{net.ssid} ({net.rssi}dBm)</option>))}</select><button onClick={handleScanWifi} disabled={isScanning} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg transition disabled:opacity-50">{isScanning ? <RefreshCw className="animate-spin" size={20} /> : <RefreshCw size={20} />}</button></div></div>
-                                        <div><label className="block text-sm font-medium mb-1">{t.wifiPass}</label><input type="password" value={configForm.wifiPass} onChange={(e) => setConfigForm({ ...configForm, wifiPass: e.target.value })} placeholder="********" className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none transition ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} /></div>
+                                        <div><label className="block text-sm font-medium mb-1">{t.deviceId}</label><input type="text" value={configForm.deviceId} onChange={(e) => setConfigForm({ ...configForm, deviceId: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none transition ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`} /></div>
+                                        <div><label className="block text-sm font-medium mb-1">{t.wifiSelect}</label><div className="flex gap-2"><select className={`flex-1 p-3 rounded-lg border outline-none ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`} value={configForm.wifiSSID} onChange={(e) => setConfigForm({ ...configForm, wifiSSID: e.target.value })}><option value="">-- {t.wifiSelect} --</option>{wifiList.map((net, idx) => (<option key={idx} value={net.ssid}>{net.ssid} ({net.rssi}dBm)</option>))}</select><button onClick={handleScanWifi} disabled={isScanning} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg transition disabled:opacity-50">{isScanning ? <RefreshCw className="animate-spin" size={20} /> : <RefreshCw size={20} />}</button></div></div>
+                                        <div>
+                                            <label className="block text-sm font-medium mb-1">{t.wifiPass}</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showWifiPass ? "text" : "password"}
+                                                    value={configForm.wifiPass}
+                                                    onChange={(e) => setConfigForm({ ...configForm, wifiPass: e.target.value })}
+                                                    placeholder="********"
+                                                    className={`w-full p-3 pr-10 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none transition ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowWifiPass(!showWifiPass)}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                                >
+                                                    {showWifiPass ? <Eye size={18} /> : <EyeOff size={18} />}
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div className={`p-8 rounded-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm`}>
+                                <div className={`p-8 rounded-2xl border shadow-md ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'}`}>
                                     <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-700/50"><Router className="text-purple-500" /><h3 className="text-xl font-bold">{t.mqttConfig}</h3></div>
                                     <div className="space-y-4">
-                                        <div><label className="block text-sm font-medium mb-1">{t.server}</label><input type="text" value={configForm.server} onChange={(e) => setConfigForm({ ...configForm, server: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} /></div>
-                                        <div><label className="block text-sm font-medium mb-1">{t.port}</label><input type="number" value={configForm.port} onChange={(e) => setConfigForm({ ...configForm, port: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} /></div>
-                                        <div><label className="block text-sm font-medium mb-1">{t.token}</label><input type="password" value="sk_test_123456789" readOnly className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition opacity-70 cursor-not-allowed ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} /></div>
-                                        <div><label className="block text-sm font-medium mb-1">{t.sendInterval}</label><input type="number" min="1" value={configForm.sendInterval} onChange={(e) => setConfigForm({ ...configForm, sendInterval: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`} /></div>
+                                        <div><label className="block text-sm font-medium mb-1">{t.server}</label><input type="text" value={configForm.server} onChange={(e) => setConfigForm({ ...configForm, server: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`} /></div>
+                                        <div><label className="block text-sm font-medium mb-1">{t.port}</label><input type="number" value={configForm.port} onChange={(e) => setConfigForm({ ...configForm, port: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`} /></div>
+                                        <div>
+                                            <label className="block text-sm font-medium mb-1">{t.token}</label>
+                                            <div className="relative">
+                                                <input
+                                                    type={showToken ? "text" : "password"}
+                                                    value={configForm.token}
+                                                    onChange={(e) => setConfigForm({ ...configForm, token: e.target.value })}
+                                                    className={`w-full p-3 pr-10 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowToken(!showToken)}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                                >
+                                                    {showToken ? <Eye size={18} /> : <EyeOff size={18} />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div><label className="block text-sm font-medium mb-1">{t.sendInterval}</label><input type="number" min="1" value={configForm.sendInterval} onChange={(e) => setConfigForm({ ...configForm, sendInterval: e.target.value })} className={`w-full p-3 rounded-lg border focus:ring-2 focus:ring-purple-500 outline-none transition ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`} /></div>
                                     </div>
                                     <div className="mt-8 flex gap-3">
                                         <button onClick={handleLoadConfig} className={`flex-1 ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'} text-current font-bold py-3 rounded-xl transition flex items-center justify-center gap-2`}>{isLoadingConfig ? <RefreshCw className="animate-spin" size={20} /> : <Download size={20} />}{t.load}</button>
